@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 
 import { supabaseAdmin } from '../_shared/client.ts'
 import { reserveIdempotencyKey } from '../_shared/idempotency.ts'
+import { buildLogContext, createLogger } from '../_shared/logging.ts'
 
 const MAX_ATTEMPTS = 5
 const RETRY_DELAY_MINUTES = 5
@@ -12,13 +13,18 @@ const totalCentsFromPayload = (payload: Record<string, unknown>) => {
 }
 
 serve(async (req) => {
+  const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {}
+  const logger = createLogger(buildLogContext('parse-document-worker', body, req))
+
   if (!['POST', 'GET'].includes(req.method)) {
+    logger.warn('method_not_allowed', { method: req.method })
     return new Response('Method Not Allowed', { status: 405 })
   }
 
-  const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {}
   const batchSize = Number(body.batch_size ?? 25)
   const nowIso = new Date().toISOString()
+
+  logger.info('worker_batch_requested', { batch_size: batchSize })
 
   const { data: queued, error: queueError } = await supabaseAdmin
     .from('document_parse_ingest')
@@ -29,12 +35,19 @@ serve(async (req) => {
     .limit(batchSize)
 
   if (queueError) {
+    logger.error('worker_queue_fetch_failed', { error: queueError.message })
     throw queueError
   }
 
   const processed: Array<Record<string, unknown>> = []
 
   for (const record of queued ?? []) {
+    const recordLogger = logger.child({
+      household_id: record.household_id as string,
+      entry_id: record.id as string,
+      event_id: record.document_parse_id as string,
+    })
+
     const attemptCount = (record.attempt_count as number) + 1
 
     await supabaseAdmin
@@ -130,6 +143,11 @@ serve(async (req) => {
         })
         .eq('id', record.id)
 
+      recordLogger.info('worker_record_processed', {
+        posting_journal_entry_id: journalEntryId,
+        parse_job_id: parseJobId,
+        latency_ms: Math.max(latencyMs, 0),
+      })
       processed.push({
         id: record.id,
         documentParseId: record.document_parse_id,
@@ -162,6 +180,11 @@ serve(async (req) => {
         })
         .eq('id', record.id)
 
+      recordLogger.error('worker_record_failed', {
+        error: message,
+        dead_lettered: deadLetter,
+        attempt_count: attemptCount,
+      })
       processed.push({
         id: record.id,
         documentParseId: record.document_parse_id,
@@ -171,6 +194,7 @@ serve(async (req) => {
     }
   }
 
+  logger.info('worker_batch_completed', { processed_count: processed.length })
   return Response.json({
     function: 'parse-document-worker',
     processedCount: processed.length,
