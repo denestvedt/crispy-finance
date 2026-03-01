@@ -1,0 +1,13 @@
+project_id = "household-cfo-local"
+
+[api]
+enabled = true
+port = 54321
+
+[db]
+port = 54322
+major_version = 15
+
+[functions]
+[functions.calculate-position]
+verify_jwt = true
