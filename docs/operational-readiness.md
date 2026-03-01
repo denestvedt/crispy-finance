@@ -127,3 +127,7 @@ Implementation details:
 3. Validate that error rates and latency recover within 15 minutes.
 4. Reprocess impacted queue records safely using idempotency keys.
 5. Publish incident summary, impact window, and follow-up actions.
+
+## Secret management
+
+- Follow the [Secret Rotation Playbook](./secret-rotation-playbook.md) for scheduled and emergency credential rotation.
