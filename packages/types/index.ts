@@ -149,3 +149,100 @@ export interface NotificationPayload {
   body: string
   data?: Record<string, unknown>
 }
+
+export interface ErrorEnvelope {
+  code: string
+  message: string
+  retryable: boolean
+  correlation_id: string
+}
+
+export type ApiResult<T> =
+  | {
+      ok: true
+      data: T
+    }
+  | {
+      ok: false
+      error: ErrorEnvelope
+    }
+
+export interface PostJournalEntryLineInput {
+  account_id: string
+  amount_cents: number
+  side: 'debit' | 'credit'
+  memo?: string
+}
+
+export interface PostJournalEntryRequest {
+  household_id: string
+  entry_date?: string
+  effective_date?: string
+  description: string
+  entry_type: EntryType
+  source: EntrySource
+  lines: PostJournalEntryLineInput[]
+  idempotency_key: string
+}
+
+export interface PostJournalEntryResponse {
+  journal_entry_id: string
+  replayed: boolean
+  is_posted: boolean
+}
+
+export interface CalculatePositionRequest {
+  household_id: string
+  as_of?: string
+}
+
+export type CalculatePositionResponse = TrueLiquidPosition
+
+export interface RunDailyAccrualsRequest {
+  household_id?: string
+  run_date?: string
+  idempotency_key?: string
+}
+
+export interface RunDailyAccrualsResponse {
+  posted_count: number
+  posted_total_cents: number
+}
+
+export interface ClosePeriodRequest {
+  household_id: string
+  period_end: string
+  idempotency_key: string
+}
+
+export interface ClosePeriodResponse {
+  close_entry_id: string | null
+  replayed: boolean
+  net_income_cents: number
+}
+
+export interface PlaidExchangeRequest {
+  household_id: string
+  public_token: string
+  plaid_transaction_ids: string[]
+  idempotency_key: string
+}
+
+export interface PlaidExchangeResponse {
+  accepted_transaction_ids: string[]
+  duplicate_transaction_ids: string[]
+}
+
+export interface PlaidWebhookRequest {
+  household_id: string
+  webhook_event_id: string
+  transaction_amounts_cents: number[]
+  idempotency_key: string
+}
+
+export interface PlaidWebhookResponse {
+  webhook_event_id: string
+  net_amount_cents: number
+  transaction_count: number
+  replayed: boolean
+}
