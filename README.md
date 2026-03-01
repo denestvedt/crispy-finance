@@ -22,3 +22,7 @@ pnpm dev
 2. Replace API placeholders with Supabase + Plaid integrations.
 3. Implement each edge function’s accounting workflow.
 4. Add tests for journal balancing and accrual posting.
+
+## Operations
+
+- `docs/operational-readiness.md`: SLOs, alerting, runbooks, and rollout/rollback checklists.
