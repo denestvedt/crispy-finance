@@ -1,7 +1,6 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 
-import { centsToDecimalString, sumCents } from '../_shared/ledger.ts'
-import { reserveIdempotencyKey } from '../_shared/idempotency.ts'
+import { supabaseAdmin } from '../_shared/client.ts'
 
 serve(async (req) => {
   if (req.method !== 'POST') {
@@ -10,32 +9,54 @@ serve(async (req) => {
 
   const payload = await req.json()
   const parseId = String(payload.document_parse_id ?? '')
+  const householdId = String(payload.household_id ?? '')
+  const documentUploadId = payload.document_upload_id ? String(payload.document_upload_id) : null
 
-  if (!parseId) {
-    return Response.json({ error: 'document_parse_id is required' }, { status: 400 })
+  if (!parseId || !householdId) {
+    return Response.json(
+      { error: 'document_parse_id and household_id are required' },
+      { status: 400 },
+    )
   }
 
-  const idempotency = await reserveIdempotencyKey({
-    householdId: payload.household_id,
-    source: 'document_parse',
-    sourceEventId: parseId,
-  })
+  const { data, error } = await supabaseAdmin
+    .from('document_parse_ingest')
+    .insert({
+      household_id: householdId,
+      document_parse_id: parseId,
+      document_upload_id: documentUploadId,
+      payload,
+    })
+    .select('id, status, created_at')
+    .single()
 
-  if (idempotency.isDuplicate) {
-    return Response.json({ status: 'duplicate_ignored', documentParseId: parseId })
+  if (error?.code === '23505') {
+    const { data: existing } = await supabaseAdmin
+      .from('document_parse_ingest')
+      .select('id, status, created_at')
+      .eq('document_parse_id', parseId)
+      .single()
+
+    return Response.json({
+      function: 'parse-document',
+      status: 'duplicate_ignored',
+      documentParseId: parseId,
+      ingestId: existing?.id,
+      ingestStatus: existing?.status,
+      queuedAt: existing?.created_at,
+    })
   }
 
-  const lineItemsCents = Array.isArray(payload.line_items_cents)
-    ? payload.line_items_cents.map((amount: number | string) => BigInt(amount))
-    : []
-
-  const totalCents = sumCents(lineItemsCents)
+  if (error) {
+    throw error
+  }
 
   return Response.json({
     function: 'parse-document',
     status: 'accepted',
     documentParseId: parseId,
-    lineItemCount: lineItemsCents.length,
-    parsedTotal: centsToDecimalString(totalCents),
+    ingestId: data.id,
+    ingestStatus: data.status,
+    queuedAt: data.created_at,
   })
 })
