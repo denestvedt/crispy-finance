@@ -9,6 +9,11 @@ export type Pagination = {
   to: number
 }
 
+export type CursorPagination = {
+  cursor: string | null
+  pageSize: number
+}
+
 export const parsePagination = (url: string): Pagination => {
   const { searchParams } = new URL(url)
 
@@ -24,6 +29,21 @@ export const parsePagination = (url: string): Pagination => {
   const to = from + pageSize - 1
 
   return { page, pageSize, from, to }
+}
+
+export const parseCursorPagination = (url: string): CursorPagination => {
+  const { searchParams } = new URL(url)
+  const cursorParam = searchParams.get('cursor')
+  const rawPageSize = Number(searchParams.get('page_size') ?? DEFAULT_PAGE_SIZE)
+
+  const pageSize = Number.isFinite(rawPageSize)
+    ? Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(rawPageSize)))
+    : DEFAULT_PAGE_SIZE
+
+  return {
+    cursor: cursorParam && cursorParam.length > 0 ? cursorParam : null,
+    pageSize,
+  }
 }
 
 export const paginationConfig = {
