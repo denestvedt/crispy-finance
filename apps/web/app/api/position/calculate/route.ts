@@ -14,9 +14,8 @@ export async function POST(req: Request) {
     const payload = await parseJson(req, schema)
     const supabase = await createClient()
 
-    const { data, error } = await supabase.rpc('calculate_true_liquid_position', {
+    const { data, error } = await supabase.rpc('get_household_liquid_position_projection', {
       p_household_id: payload.household_id,
-      p_as_of: payload.as_of ?? null,
     })
 
     if (error) {

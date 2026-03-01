@@ -9,20 +9,22 @@ const EMPTY_POSITION: TrueLiquidPosition = {
   outstanding_credit_balances: 0,
   provisioned_obligations: 0,
   true_liquid_position: 0,
-  as_of: new Date(0).toISOString()
+  as_of: new Date(0).toISOString(),
 }
 
 export function usePosition(householdId: string) {
   return useQuery({
-    queryKey: ['position', householdId],
+    queryKey: ['projection', 'position', householdId],
+    enabled: Boolean(householdId),
+    staleTime: 15_000,
+    refetchInterval: 60_000,
     queryFn: async () => {
-      const response = await fetch('/api/position/calculate', {
-        method: 'POST',
-        body: JSON.stringify({ householdId })
-      })
+      const params = new URLSearchParams({ household_id: householdId })
+      const response = await fetch(`/api/projections/position?${params.toString()}`, { method: 'GET' })
 
       if (!response.ok) return EMPTY_POSITION
-      return (await response.json()) as TrueLiquidPosition
-    }
+      const payload = (await response.json()) as { ok: boolean; data?: TrueLiquidPosition }
+      return payload.ok ? (payload.data ?? EMPTY_POSITION) : EMPTY_POSITION
+    },
   })
 }
