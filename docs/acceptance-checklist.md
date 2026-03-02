@@ -62,3 +62,7 @@ Repeat this block for local, staging, and Vercel preview.
 - Some Edge Functions may include TODO paths (for example, retries/backoff or notification branches) that are intentionally scaffolded and not production-hardened yet.
 - Route accessibility may depend on auth/session state; redirect responses (307/308) can be acceptable when they resolve to non-5xx pages.
 - Hosted Supabase projects with restricted roles may require elevated database permissions to run all verification commands.
+
+## Feature acceptance criteria (auth + household bootstrap)
+
+- A new user can sign up and see their own household dashboard.

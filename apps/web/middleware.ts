@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
 
 type WindowConfig = {
   limit: number
@@ -75,7 +76,7 @@ function applyRateLimitHeaders(response: NextResponse, result: { remaining: numb
   return response
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   if (pathname.startsWith('/api/auth')) {
@@ -122,9 +123,61 @@ export function middleware(request: NextRequest) {
     return applyRateLimitHeaders(NextResponse.next(), result)
   }
 
+  const isAuthPage = pathname === '/login' || pathname === '/signup'
+  const isAppRoute = !pathname.startsWith('/api') && !pathname.startsWith('/_next') && pathname !== '/favicon.ico'
+
+  if (isAppRoute || isAuthPage) {
+    let response = NextResponse.next({
+      request: {
+        headers: request.headers,
+      },
+    })
+
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll()
+          },
+          setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
+            cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+            response = NextResponse.next({
+              request: {
+                headers: request.headers,
+              },
+            })
+            cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options))
+          },
+        },
+      },
+    )
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user && isAppRoute && !isAuthPage) {
+      const redirectUrl = request.nextUrl.clone()
+      redirectUrl.pathname = '/login'
+      redirectUrl.searchParams.set('next', pathname)
+      return NextResponse.redirect(redirectUrl)
+    }
+
+    if (user && isAuthPage) {
+      const redirectUrl = request.nextUrl.clone()
+      redirectUrl.pathname = '/dashboard'
+      redirectUrl.search = ''
+      return NextResponse.redirect(redirectUrl)
+    }
+
+    return response
+  }
+
   return NextResponse.next()
 }
 
 export const config = {
-  matcher: ['/api/auth/:path*', '/api/plaid/webhook/:path*'],
+  matcher: ['/((?!_next/static|_next/image).*)'],
 }
