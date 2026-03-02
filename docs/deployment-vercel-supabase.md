@@ -10,7 +10,7 @@ This runbook covers deploying the `apps/web` Next.js app to Vercel and connectin
    - **Framework Preset**: `Next.js` (or keep the auto-detected value).
    - **Root Directory**: click **Edit** and set it to `apps/web`.
 4. Open **Build and Output Settings** and set:
-   - **Install Command**: `corepack enable && corepack prepare pnpm@9.0.0 --activate && cd ../.. && pnpm install --frozen-lockfile`
+   - **Install Command**: `corepack enable && corepack prepare pnpm@9.0.0 --activate && cd ../.. && pnpm install --no-frozen-lockfile`
    - **Build Command**: `cd ../.. && pnpm --filter web build`
    - **Output Directory**: leave blank for Next.js default (`.next`)
 5. In **Environment Variables**, add the required values (see section 2 below).
@@ -95,18 +95,16 @@ If any row fails, mark **No-Go**, fix, and redeploy.
 
 ### Error: `Command "pnpm install --frozen-lockfile" exited with 1`
 
-This usually happens when Vercel runs install inside `apps/web` (no lockfile/workspace root there).
+No—`--frozen-lockfile` is not required for Vercel to build. It is a strict CI safety check that fails when `pnpm-lock.yaml` does not exactly match package manifests.
 
-Use this exact **Install Command** first:
-
-```bash
-corepack enable && corepack prepare pnpm@9.0.0 --activate && cd ../.. && pnpm install --frozen-lockfile
-```
-
-If it still fails, use this fallback **Install Command** to unblock deployment while you reconcile lockfile drift:
+Use this **Install Command** in Vercel:
 
 ```bash
 corepack enable && corepack prepare pnpm@9.0.0 --activate && cd ../.. && pnpm install --no-frozen-lockfile
 ```
 
-Then fix drift permanently by running `pnpm install` locally, committing the updated `pnpm-lock.yaml`, and switching Vercel back to the frozen-lockfile command.
+If you want strict reproducible installs later, reconcile and commit lockfile changes locally, then switch back to:
+
+```bash
+corepack enable && corepack prepare pnpm@9.0.0 --activate && cd ../.. && pnpm install --frozen-lockfile
+```
