@@ -9,7 +9,7 @@ const schema = z.object({
   public_token: z.string().min(1),
   plaid_transaction_ids: z.array(z.string().min(1)).default([]),
   idempotency_key: z.string().min(8),
-}) satisfies z.ZodType<PlaidExchangeRequest>
+})
 
 export async function POST(req: Request) {
   try {

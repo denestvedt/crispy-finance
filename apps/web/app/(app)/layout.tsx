@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import type { Route } from 'next'
 import type { ReactNode } from 'react'
 
 const navItems = [
@@ -20,7 +21,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <ul className="flex gap-4">
           {navItems.map((item) => (
             <li key={item}>
-              <Link href={`/${item}`} className="text-slate-300 hover:text-white capitalize">
+              <Link href={`/${item}` as Route} className="text-slate-300 hover:text-white capitalize">
                 {item.replace('-', ' ')}
               </Link>
             </li>
