@@ -10,7 +10,7 @@ This runbook covers deploying the `apps/web` Next.js app to Vercel and connectin
    - **Framework Preset**: `Next.js` (or keep the auto-detected value).
    - **Root Directory**: click **Edit** and set it to `apps/web`.
 4. Open **Build and Output Settings** and set:
-   - **Install Command**: `cd ../.. && pnpm install --frozen-lockfile`
+   - **Install Command**: `corepack enable && corepack prepare pnpm@9.0.0 --activate && cd ../.. && pnpm install --no-frozen-lockfile`
    - **Build Command**: `cd ../.. && pnpm --filter web build`
    - **Output Directory**: leave blank for Next.js default (`.next`)
 5. In **Environment Variables**, add the required values (see section 2 below).
@@ -95,12 +95,31 @@ If any row fails, mark **No-Go**, fix, and redeploy.
 
 ### Error: `Command "pnpm install --frozen-lockfile" exited with 1`
 
-This usually happens when Vercel runs install inside `apps/web` (no lockfile/workspace root there).
+No—`--frozen-lockfile` is not required for Vercel to build. It is a strict CI safety check that fails when `pnpm-lock.yaml` does not exactly match package manifests.
 
-Use this exact **Install Command** instead:
+Use this **Install Command** in Vercel:
 
 ```bash
-cd ../.. && pnpm install --frozen-lockfile
+corepack enable && corepack prepare pnpm@9.0.0 --activate && cd ../.. && pnpm install --no-frozen-lockfile
 ```
 
-If your pipeline still fails due to lockfile drift, run `pnpm install` locally to refresh `pnpm-lock.yaml`, commit the lockfile update, and redeploy.
+If you want strict reproducible installs later, reconcile and commit lockfile changes locally, then switch back to:
+
+```bash
+corepack enable && corepack prepare pnpm@9.0.0 --activate && cd ../.. && pnpm install --frozen-lockfile
+```
+
+
+### Error: `ERR_PNPM_META_FETCH_FAIL` / `ERR_INVALID_THIS` during `pnpm install`
+
+This error is typically a runtime/tooling mismatch in Vercel (for example, unexpected Node + pnpm combination), not a Supabase configuration problem.
+
+Use this fix sequence in Vercel:
+
+1. Go to **Project Settings** → **General** → **Node.js Version** and set **20.x**.
+2. Go to **Project Settings** → **Build and Deployment** and set:
+   - **Install Command**: `corepack enable && corepack prepare pnpm@9.0.0 --activate && cd ../.. && pnpm install --no-frozen-lockfile`
+   - **Build Command**: `cd ../.. && pnpm --filter web build`
+3. Redeploy from **Deployments** using **Redeploy** (optionally disable cache for the first clean retry).
+
+If Vercel still shows the log line `Running "install" command: "pnpm install"...`, your custom command is not applied yet—re-save the project settings and redeploy.
