@@ -9,12 +9,14 @@ This runbook covers deploying the `apps/web` Next.js app to Vercel and connectin
 3. In **Configure Project**:
    - **Framework Preset**: `Next.js` (or keep the auto-detected value).
    - **Root Directory**: click **Edit** and set it to `apps/web`.
-4. Open **Build and Output Settings** and confirm:
-   - **Install Command**: `pnpm install --frozen-lockfile`
-   - **Build Command**: `pnpm build`
+4. Open **Build and Output Settings** and set:
+   - **Install Command**: `cd ../.. && pnpm install --frozen-lockfile`
+   - **Build Command**: `cd ../.. && pnpm --filter web build`
    - **Output Directory**: leave blank for Next.js default (`.next`)
 5. In **Environment Variables**, add the required values (see section 2 below).
 6. Click **Deploy**.
+
+> Why these commands? `web` depends on workspace packages, so install/build must run from the monorepo root even when Vercel Root Directory is `apps/web`.
 
 ### Exact Vercel UI labels to click
 
@@ -88,3 +90,17 @@ Complete this table before promoting to production.
 | API route returns response | `curl -i https://<deployment-url>/api/projections/position` returns HTTP response (200/4xx/5xx still confirms route is reachable) | Go if pass |
 
 If any row fails, mark **No-Go**, fix, and redeploy.
+
+## 5) Troubleshooting
+
+### Error: `Command "pnpm install --frozen-lockfile" exited with 1`
+
+This usually happens when Vercel runs install inside `apps/web` (no lockfile/workspace root there).
+
+Use this exact **Install Command** instead:
+
+```bash
+cd ../.. && pnpm install --frozen-lockfile
+```
+
+If your pipeline still fails due to lockfile drift, run `pnpm install` locally to refresh `pnpm-lock.yaml`, commit the lockfile update, and redeploy.
