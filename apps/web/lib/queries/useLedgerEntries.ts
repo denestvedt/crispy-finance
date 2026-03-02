@@ -13,7 +13,7 @@ export interface LedgerEntry {
   created_at: string
 }
 
-interface LedgerEntriesResponse {
+export interface LedgerEntriesResponse {
   items: LedgerEntry[]
   next_cursor: string | null
   page_size: number
@@ -24,8 +24,8 @@ export function useLedgerEntries(householdId: string, pageSize = 40) {
     queryKey: ['ledger', 'entries', householdId, pageSize],
     enabled: Boolean(householdId),
     initialPageParam: null as string | null,
-    getNextPageParam: (lastPage) => lastPage.next_cursor,
-    queryFn: async ({ pageParam }) => {
+    getNextPageParam: (lastPage: LedgerEntriesResponse) => lastPage.next_cursor,
+    queryFn: async ({ pageParam }: { pageParam: string | null }): Promise<LedgerEntriesResponse> => {
       const params = new URLSearchParams({
         household_id: householdId,
         page_size: String(pageSize),

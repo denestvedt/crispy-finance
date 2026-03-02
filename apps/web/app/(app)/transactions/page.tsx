@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 
 import { VirtualizedLedgerTable } from '@/components/ledger/VirtualizedLedgerTable'
 import { useLedgerEntries } from '@/lib/queries/useLedgerEntries'
+import type { LedgerEntriesResponse } from '@/lib/queries/useLedgerEntries'
 
 const HOUSEHOLD_ID = process.env.NEXT_PUBLIC_DEFAULT_HOUSEHOLD_ID ?? ''
 
@@ -11,7 +12,7 @@ export default function TransactionsPage() {
   const ledger = useLedgerEntries(HOUSEHOLD_ID)
 
   const entries = useMemo(
-    () => ledger.data?.pages.flatMap((page) => page.items) ?? [],
+    () => (ledger.data?.pages as LedgerEntriesResponse[] | undefined)?.flatMap((page) => page.items) ?? [],
     [ledger.data?.pages],
   )
 
