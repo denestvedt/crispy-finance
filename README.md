@@ -38,3 +38,27 @@ The dashboard currently runs in a temporary **Demo Mode** with placeholder/query
 ## Operations
 
 - `docs/operational-readiness.md`: SLOs, alerting, runbooks, and rollout/rollback checklists.
+
+## Local Testing in 5 Minutes
+
+Use this quick flow to boot the full local stack (web + Supabase), reset the database, and verify the dashboard.
+
+1. From the repo root, start everything:
+
+```bash
+./scripts/start-local.sh
+```
+
+2. Wait for the script to finish setup and launch the web server.
+
+3. Open <http://localhost:3000> in your browser.
+
+4. Expected success outcome: you should land on the Dashboard experience (currently Demo Mode scaffold) without setup errors.
+
+5. When you are done testing, stop local services cleanly in a second terminal:
+
+```bash
+./scripts/stop-local.sh
+```
+
+If the startup script reports a missing tool, install the tool (`node`, `pnpm`, or `supabase`) and run the command again.
