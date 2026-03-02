@@ -33,6 +33,9 @@ export default function DashboardPage() {
   return (
     <section className="space-y-4">
       <h1 className="text-xl font-semibold">Dashboard</h1>
+      <div className="rounded-md border border-amber-400/60 bg-amber-400/10 px-3 py-2 text-sm font-medium text-amber-200">
+        Demo data
+      </div>
       <p className={`text-xs ${realtime.isOnline ? 'text-emerald-300' : 'text-amber-300'}`}>{realtime.modeLabel}</p>
 
       <ModuleCard title="True liquid position">
