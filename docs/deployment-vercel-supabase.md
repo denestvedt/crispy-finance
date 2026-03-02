@@ -108,3 +108,18 @@ If you want strict reproducible installs later, reconcile and commit lockfile ch
 ```bash
 corepack enable && corepack prepare pnpm@9.0.0 --activate && cd ../.. && pnpm install --frozen-lockfile
 ```
+
+
+### Error: `ERR_PNPM_META_FETCH_FAIL` / `ERR_INVALID_THIS` during `pnpm install`
+
+This error is typically a runtime/tooling mismatch in Vercel (for example, unexpected Node + pnpm combination), not a Supabase configuration problem.
+
+Use this fix sequence in Vercel:
+
+1. Go to **Project Settings** → **General** → **Node.js Version** and set **20.x**.
+2. Go to **Project Settings** → **Build and Deployment** and set:
+   - **Install Command**: `corepack enable && corepack prepare pnpm@9.0.0 --activate && cd ../.. && pnpm install --no-frozen-lockfile`
+   - **Build Command**: `cd ../.. && pnpm --filter web build`
+3. Redeploy from **Deployments** using **Redeploy** (optionally disable cache for the first clean retry).
+
+If Vercel still shows the log line `Running "install" command: "pnpm install"...`, your custom command is not applied yet—re-save the project settings and redeploy.
