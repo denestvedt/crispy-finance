@@ -20,7 +20,7 @@ export default function LoginPage() {
     setLoading(true)
     setError(null)
 
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
 
     if (signInError) {
       setError(signInError.message)
@@ -49,6 +49,7 @@ export default function LoginPage() {
           <input
             required
             type="email"
+            autoComplete="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             className="w-full rounded border border-slate-700 bg-slate-900 px-3 py-2"
@@ -60,6 +61,7 @@ export default function LoginPage() {
           <input
             required
             type="password"
+            autoComplete="current-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             className="w-full rounded border border-slate-700 bg-slate-900 px-3 py-2"
