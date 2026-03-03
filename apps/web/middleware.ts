@@ -2,6 +2,8 @@ import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 
+import { getSupabaseEnv, hasSupabaseEnv } from '@/lib/supabase/env'
+
 type WindowConfig = {
   limit: number
   windowMs: number
@@ -16,6 +18,8 @@ const RATE_LIMIT_CONFIG: Record<string, WindowConfig> = {
   auth: { limit: 12, windowMs: 60_000 },
   webhook: { limit: 120, windowMs: 60_000 },
 }
+
+const AUTH_PAGES = new Set(['/login', '/signup'])
 
 const globalRateLimitStore = globalThis as typeof globalThis & {
   __rateLimitBuckets?: Map<string, Bucket>
@@ -76,6 +80,10 @@ function applyRateLimitHeaders(response: NextResponse, result: { remaining: numb
   return response
 }
 
+function isBrowserPageRequest(pathname: string) {
+  return !pathname.startsWith('/api') && !pathname.startsWith('/_next') && pathname !== '/favicon.ico'
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
@@ -123,59 +131,64 @@ export async function middleware(request: NextRequest) {
     return applyRateLimitHeaders(NextResponse.next(), result)
   }
 
-  const isAuthPage = pathname === '/login' || pathname === '/signup'
-  const isAppRoute = !pathname.startsWith('/api') && !pathname.startsWith('/_next') && pathname !== '/favicon.ico'
+  if (!isBrowserPageRequest(pathname)) {
+    return NextResponse.next()
+  }
 
-  if (isAppRoute || isAuthPage) {
-    let response = NextResponse.next({
-      request: {
-        headers: request.headers,
-      },
-    })
+  const isAuthPage = AUTH_PAGES.has(pathname)
 
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
-      {
-        cookies: {
-          getAll() {
-            return request.cookies.getAll()
-          },
-          setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
-            cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-            response = NextResponse.next({
-              request: {
-                headers: request.headers,
-              },
-            })
-            cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options))
-          },
-        },
-      },
-    )
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  })
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user && isAppRoute && !isAuthPage) {
-      const redirectUrl = request.nextUrl.clone()
-      redirectUrl.pathname = '/login'
-      redirectUrl.searchParams.set('next', pathname)
-      return NextResponse.redirect(redirectUrl)
-    }
-
-    if (user && isAuthPage) {
-      const redirectUrl = request.nextUrl.clone()
-      redirectUrl.pathname = '/dashboard'
-      redirectUrl.search = ''
-      return NextResponse.redirect(redirectUrl)
-    }
-
+  if (!hasSupabaseEnv()) {
     return response
   }
 
-  return NextResponse.next()
+  const { url, anonKey } = getSupabaseEnv()
+
+  const supabase = createServerClient(
+    url,
+    anonKey,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+          response = NextResponse.next({
+            request: {
+              headers: request.headers,
+            },
+          })
+          cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options))
+        },
+      },
+    },
+  )
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user && !isAuthPage) {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = '/login'
+    redirectUrl.searchParams.set('next', pathname)
+    return NextResponse.redirect(redirectUrl)
+  }
+
+  if (user && isAuthPage) {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = '/dashboard'
+    redirectUrl.search = ''
+    return NextResponse.redirect(redirectUrl)
+  }
+
+  return response
 }
 
 export const config = {

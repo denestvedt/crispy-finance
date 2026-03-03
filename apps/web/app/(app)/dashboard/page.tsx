@@ -27,13 +27,17 @@ export default async function DashboardPage() {
     <section className="space-y-4">
       <h1 className="text-xl font-semibold">Dashboard</h1>
 
-      <ModuleCard title="Household summary">
+      <ModuleCard title="Household loaded">
         {!membership && <p className="text-sm text-slate-400">No household found yet.</p>}
         {membership && (
-          <dl className="grid gap-2 text-sm text-slate-300 sm:grid-cols-3">
+          <dl className="grid gap-2 text-sm text-slate-300 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <dt className="text-slate-400">Household</dt>
               <dd className="font-medium text-white">{householdName ?? 'Unnamed household'}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-400">Household ID</dt>
+              <dd className="font-mono text-xs text-white">{householdId}</dd>
             </div>
             <div>
               <dt className="text-slate-400">Member</dt>
