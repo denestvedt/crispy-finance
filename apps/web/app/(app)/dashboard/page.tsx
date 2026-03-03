@@ -13,15 +13,15 @@ export default async function DashboardPage() {
 
   const { data: membership } = await supabase
     .from('household_members')
-    .select('household_id, role, display_name, households(name)')
+    .select('household_id, role, display_name, created_at, households(name)')
     .eq('user_id', user?.id ?? '')
+    .order('created_at', { ascending: true })
+    .limit(1)
     .maybeSingle()
 
   const householdId = membership?.household_id ?? ''
   const householdRecord = membership?.households as HouseholdRef
-  const householdName = Array.isArray(householdRecord)
-    ? householdRecord[0]?.name
-    : householdRecord?.name
+  const householdName = Array.isArray(householdRecord) ? householdRecord[0]?.name : householdRecord?.name
 
   return (
     <section className="space-y-4">

@@ -5,9 +5,9 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
 import { createClient } from '@/lib/supabase/client'
+import { hasSupabaseEnv } from '@/lib/supabase/env'
 
 export default function LoginPage() {
-  const supabase = createClient()
   const router = useRouter()
 
   const [email, setEmail] = useState('')
@@ -20,18 +20,18 @@ export default function LoginPage() {
     setLoading(true)
     setError(null)
 
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
-
-    if (signInError) {
-      setError(signInError.message)
+    if (!hasSupabaseEnv()) {
+      setError('Supabase authentication is not configured for this environment.')
       setLoading(false)
       return
     }
 
-    const bootstrapResponse = await fetch('/api/auth/bootstrap-household', { method: 'POST' })
-    if (!bootstrapResponse.ok) {
-      const body = (await bootstrapResponse.json().catch(() => null)) as { error?: string } | null
-      setError(body?.error ?? 'Unable to prepare your household workspace.')
+    const supabase = createClient()
+
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+
+    if (signInError) {
+      setError(signInError.message)
       setLoading(false)
       return
     }

@@ -5,9 +5,9 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
 import { createClient } from '@/lib/supabase/client'
+import { hasSupabaseEnv } from '@/lib/supabase/env'
 
 export default function SignupPage() {
-  const supabase = createClient()
   const router = useRouter()
 
   const [email, setEmail] = useState('')
@@ -22,6 +22,14 @@ export default function SignupPage() {
     setLoading(true)
     setError(null)
     setNotice(null)
+
+    if (!hasSupabaseEnv()) {
+      setError('Supabase authentication is not configured for this environment.')
+      setLoading(false)
+      return
+    }
+
+    const supabase = createClient()
 
     const {
       data: { session },
@@ -44,19 +52,6 @@ export default function SignupPage() {
 
     if (!session) {
       setNotice('Account created. Check your inbox to verify your email, then log in.')
-      setLoading(false)
-      return
-    }
-
-    const bootstrapResponse = await fetch('/api/auth/bootstrap-household', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ displayName: fullName }),
-    })
-
-    if (!bootstrapResponse.ok) {
-      const body = (await bootstrapResponse.json().catch(() => null)) as { error?: string } | null
-      setError(body?.error ?? 'Signed up, but failed to initialize your household.')
       setLoading(false)
       return
     }
