@@ -28,7 +28,11 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     redirect('/login')
   }
 
-  await ensureHouseholdMembership(supabase, user)
+  try {
+    await ensureHouseholdMembership(supabase, user)
+  } catch (error) {
+    console.error('Failed to ensure household membership for authenticated user', error)
+  }
 
   return (
     <div className="min-h-screen">
