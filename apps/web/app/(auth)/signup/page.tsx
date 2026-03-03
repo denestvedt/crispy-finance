@@ -5,9 +5,9 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
 import { createClient } from '@/lib/supabase/client'
+import { hasSupabaseEnv } from '@/lib/supabase/env'
 
 export default function SignupPage() {
-  const supabase = createClient()
   const router = useRouter()
 
   const [email, setEmail] = useState('')
@@ -15,14 +15,27 @@ export default function SignupPage() {
   const [fullName, setFullName] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setLoading(true)
     setError(null)
+    setNotice(null)
 
-    const { error: signUpError } = await supabase.auth.signUp({
-      email,
+    if (!hasSupabaseEnv()) {
+      setError('Supabase authentication is not configured for this environment.')
+      setLoading(false)
+      return
+    }
+
+    const supabase = createClient()
+
+    const {
+      data: { session },
+      error: signUpError,
+    } = await supabase.auth.signUp({
+      email: email.trim(),
       password,
       options: {
         data: {
@@ -37,15 +50,8 @@ export default function SignupPage() {
       return
     }
 
-    const bootstrapResponse = await fetch('/api/auth/bootstrap-household', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ displayName: fullName }),
-    })
-
-    if (!bootstrapResponse.ok) {
-      const body = (await bootstrapResponse.json().catch(() => null)) as { error?: string } | null
-      setError(body?.error ?? 'Signed up, but failed to initialize your household.')
+    if (!session) {
+      setNotice('Account created. Check your inbox to verify your email, then log in.')
       setLoading(false)
       return
     }
@@ -63,6 +69,7 @@ export default function SignupPage() {
           <input
             required
             type="text"
+            autoComplete="name"
             value={fullName}
             onChange={(event) => setFullName(event.target.value)}
             className="w-full rounded border border-slate-700 bg-slate-900 px-3 py-2"
@@ -74,6 +81,7 @@ export default function SignupPage() {
           <input
             required
             type="email"
+            autoComplete="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             className="w-full rounded border border-slate-700 bg-slate-900 px-3 py-2"
@@ -86,6 +94,7 @@ export default function SignupPage() {
             required
             minLength={8}
             type="password"
+            autoComplete="new-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             className="w-full rounded border border-slate-700 bg-slate-900 px-3 py-2"
@@ -93,6 +102,7 @@ export default function SignupPage() {
         </label>
 
         {error && <p className="text-sm text-red-400">{error}</p>}
+        {notice && <p className="text-sm text-emerald-400">{notice}</p>}
 
         <button
           type="submit"
