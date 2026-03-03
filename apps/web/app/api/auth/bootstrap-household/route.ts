@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { createClient } from '@/lib/supabase/server'
+import { ensureHouseholdMembership } from '@/lib/supabase/ensure-household'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -14,45 +15,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { data: existingMembership, error: membershipError } = await supabase
-    .from('household_members')
-    .select('household_id')
-    .eq('user_id', user.id)
-    .maybeSingle()
-
-  if (membershipError) {
-    return NextResponse.json({ error: membershipError.message }, { status: 500 })
-  }
-
-  if (existingMembership) {
-    return NextResponse.json({ ok: true })
-  }
-
   const body = (await request.json().catch(() => ({}))) as { displayName?: string }
-  const displayName = body.displayName?.trim() || user.user_metadata.full_name || user.email || 'Owner'
 
-  const householdName = `${displayName.split(' ')[0] ?? 'My'} Household`
+  try {
+    const result = await ensureHouseholdMembership(supabase, user, {
+      displayName: body.displayName,
+    })
 
-  const { data: household, error: householdError } = await supabase
-    .from('households')
-    .insert({ name: householdName })
-    .select('id')
-    .single()
-
-  if (householdError || !household) {
-    return NextResponse.json({ error: householdError?.message ?? 'Could not create household' }, { status: 500 })
+    return NextResponse.json({ ok: true, householdId: result.householdId, created: result.created })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to initialize household'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
-
-  const { error: memberInsertError } = await supabase.from('household_members').insert({
-    household_id: household.id,
-    user_id: user.id,
-    role: 'owner',
-    display_name: displayName,
-  })
-
-  if (memberInsertError) {
-    return NextResponse.json({ error: memberInsertError.message }, { status: 500 })
-  }
-
-  return NextResponse.json({ ok: true, householdId: household.id })
 }
