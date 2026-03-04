@@ -18,6 +18,11 @@ This runbook covers deploying the `apps/web` Next.js app to Vercel and connectin
 
 > Why these commands? `web` depends on workspace packages, so install/build must run from the monorepo root even when Vercel Root Directory is `apps/web`.
 
+### Repository baseline committed for this setup
+
+This repo includes a `vercel.json` baseline with the same install/build commands from this guide, and Node runtime is pinned via `engines.node` in both root and `apps/web` `package.json` files. Keep Vercel project settings aligned with these values (especially when **Root Directory** is `apps/web`).
+
+
 ### Exact Vercel UI labels to click
 
 - **Add New...**
