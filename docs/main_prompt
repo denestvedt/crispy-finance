@@ -1,0 +1,850 @@
+# Household CFO — Full Stack Build Prompt
+
+## Project Overview
+
+Build a balance sheet-first personal finance application for dual-income households and mid-career professionals. The app applies proper double-entry accrual accounting principles to give users a true household financial position — not just an expense tracker. The product is called **Household CFO**.
+
+The core value proposition: show users their **true liquid position** — cash and near-cash assets minus accrued liabilities, outstanding credit balances, and provisioned upcoming obligations — in real time. This is the hero metric the entire product is built around.
+
+---
+
+## Tech Stack
+
+### Monorepo Structure
+```
+/
+├── apps/
+│   └── web/                        # Next.js 14 frontend (App Router)
+├── supabase/
+│   ├── functions/                  # Supabase Edge Functions (Deno/TypeScript)
+│   ├── migrations/                 # PostgreSQL migrations
+│   └── seed/                       # Seed data for development
+├── packages/
+│   └── types/                      # Shared TypeScript types across web and functions
+├── package.json                    # Root package.json with workspaces
+└── supabase/config.toml
+```
+
+### Frontend
+- **Framework:** Next.js 14 with App Router
+- **Language:** TypeScript (strict mode)
+- **Styling:** Tailwind CSS
+- **Components:** Shadcn/ui + Radix UI primitives
+- **Charts:** Recharts for standard charts, D3.js for custom financial visualizations
+- **State / Server State:** React Query (TanStack Query v5) for all server state
+- **Forms:** React Hook Form + Zod validation
+- **Supabase Client:** @supabase/ssr for server components and route handlers
+
+### Backend / Infrastructure
+- **Database:** Supabase (PostgreSQL)
+- **Auth:** Supabase Auth with MFA (TOTP) enabled
+- **Edge Functions:** Supabase Edge Functions (Deno, TypeScript)
+- **Realtime:** Supabase Realtime for live balance sheet updates
+- **Bank Connections:** Plaid (transactions, balances, account identity)
+- **Document Parsing:** Edge Function that accepts PDF/CSV uploads and extracts financial data
+- **Notifications:** Supabase Edge Functions + Resend (email) + Web Push (in-app/push)
+- **Job Scheduling:** pg_cron extension in Supabase for daily accrual runs
+- **Currency:** USD only
+- **Offline:** Not required
+
+---
+
+## Shared TypeScript Types (`/packages/types`)
+
+Define and export all shared types here. Both the Next.js app and Edge Functions import from this package.
+
+```typescript
+// packages/types/index.ts
+
+export type AccountType = 'asset' | 'liability' | 'equity' | 'income' | 'expense'
+
+export type AccountSubtype =
+  | 'cash_equivalent'
+  | 'near_liquid'
+  | 'illiquid'
+  | 'current_liability'
+  | 'accrued_liability'
+  | 'long_term_liability'
+  | 'mortgage'
+  | 'retained_equity'
+  | 'current_period_result'
+  | 'income'
+  | 'expense'
+
+export type LiquidityTier = 'cash_equivalent' | 'near_liquid' | 'illiquid'
+
+export type EntryType = 'transaction' | 'accrual' | 'close' | 'adjustment' | 'provision' | 'income_accrual'
+
+export type EntrySource = 'plaid' | 'manual' | 'document_upload' | 'system_accrual' | 'period_close'
+
+export type ObligationType = 'recurring' | 'irregular' | 'contingent'
+
+export type ObligationFrequency = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual' | 'one_time'
+
+export type PaySchedule = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly'
+
+export type NotificationType =
+  | 'low_liquid_position'
+  | 'accrued_liability_threshold'
+  | 'missed_obligation'
+  | 'budget_review_reminder'
+  | 'monthly_close_reminder'
+  | 'income_statement_ready'
+  | 'net_worth_milestone'
+  | 'balance_sheet_snapshot'
+  | 'large_transaction'
+  | 'account_connection_error'
+  | 'manual_entry_posted'
+
+export interface Household {
+  id: string
+  name: string
+  created_at: string
+}
+
+export interface HouseholdMember {
+  id: string
+  household_id: string
+  user_id: string
+  role: 'owner' | 'member'
+  display_name: string
+  pay_schedule: PaySchedule
+  pay_day_1: number | null
+  pay_day_2: number | null
+  gross_annual_salary: number
+  effective_daily_rate: number
+  created_at: string
+}
+
+export interface Account {
+  id: string
+  household_id: string
+  account_type: AccountType
+  account_subtype: AccountSubtype
+  liquidity_tier: LiquidityTier | null
+  name: string
+  external_account_id: string | null
+  plaid_item_id: string | null
+  is_system: boolean
+  current_balance: number
+  created_at: string
+}
+
+export interface JournalEntry {
+  id: string
+  household_id: string
+  entry_date: string
+  effective_date: string
+  description: string
+  entry_type: EntryType
+  source: EntrySource
+  is_posted: boolean
+  created_by: string | null
+  created_at: string
+  lines?: JournalLine[]
+}
+
+export interface JournalLine {
+  id: string
+  journal_entry_id: string
+  account_id: string
+  amount: number
+  side: 'debit' | 'credit'
+  memo: string | null
+}
+
+export interface Obligation {
+  id: string
+  household_id: string
+  name: string
+  obligation_type: ObligationType
+  frequency: ObligationFrequency
+  estimated_amount: number
+  probability: number
+  next_due_date: string
+  accrual_account_id: string
+  expense_account_id: string
+  is_active: boolean
+  created_at: string
+}
+
+export interface TrueLiquidPosition {
+  gross_cash: number
+  accrued_liabilities: number
+  outstanding_credit_balances: number
+  provisioned_obligations: number
+  true_liquid_position: number
+  as_of: string
+}
+
+export interface BalanceSheet {
+  assets: {
+    cash_equivalents: Account[]
+    near_liquid: Account[]
+    illiquid: Account[]
+    total_assets: number
+  }
+  liabilities: {
+    current: Account[]
+    accrued: Account[]
+    long_term: Account[]
+    mortgage: Account[]
+    total_liabilities: number
+  }
+  equity: {
+    retained: number
+    current_period_result: number
+    total_equity: number
+  }
+  as_of: string
+}
+
+export interface NotificationPayload {
+  type: NotificationType
+  household_id: string
+  user_id: string
+  title: string
+  body: string
+  data?: Record<string, unknown>
+}
+```
+
+---
+
+## Database Schema (`/supabase/migrations`)
+
+### Migration 001 — Core Schema
+
+```sql
+-- Enable required extensions
+create extension if not exists "uuid-ossp";
+create extension if not exists "pg_cron";
+
+-- Households
+create table households (
+  id uuid primary key default uuid_generate_v4(),
+  name text not null,
+  created_at timestamptz default now()
+);
+
+-- Household members (links auth.users to households)
+create table household_members (
+  id uuid primary key default uuid_generate_v4(),
+  household_id uuid not null references households(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  role text not null default 'member' check (role in ('owner', 'member')),
+  display_name text not null,
+  pay_schedule text check (pay_schedule in ('weekly', 'biweekly', 'semimonthly', 'monthly')),
+  pay_day_1 int,
+  pay_day_2 int,
+  gross_annual_salary numeric(12,2) default 0,
+  effective_daily_rate numeric(12,4) generated always as (gross_annual_salary / 365.0) stored,
+  created_at timestamptz default now(),
+  unique(household_id, user_id)
+);
+
+-- Chart of accounts per household
+create table accounts (
+  id uuid primary key default uuid_generate_v4(),
+  household_id uuid not null references households(id) on delete cascade,
+  account_type text not null check (account_type in ('asset', 'liability', 'equity', 'income', 'expense')),
+  account_subtype text not null,
+  liquidity_tier text check (liquidity_tier in ('cash_equivalent', 'near_liquid', 'illiquid')),
+  name text not null,
+  external_account_id text,
+  plaid_item_id text,
+  plaid_access_token text, -- encrypted at rest
+  is_system boolean default false,
+  is_active boolean default true,
+  current_balance numeric(12,2) default 0,
+  created_at timestamptz default now()
+);
+
+-- Journal entry headers
+create table journal_entries (
+  id uuid primary key default uuid_generate_v4(),
+  household_id uuid not null references households(id) on delete cascade,
+  entry_date date not null default current_date,
+  effective_date date not null default current_date,
+  description text not null,
+  entry_type text not null check (entry_type in ('transaction', 'accrual', 'close', 'adjustment', 'provision', 'income_accrual')),
+  source text not null check (source in ('plaid', 'manual', 'document_upload', 'system_accrual', 'period_close')),
+  is_posted boolean default false,
+  created_by uuid references auth.users(id),
+  created_at timestamptz default now()
+);
+
+-- Journal entry lines (double-entry)
+create table journal_lines (
+  id uuid primary key default uuid_generate_v4(),
+  journal_entry_id uuid not null references journal_entries(id) on delete cascade,
+  account_id uuid not null references accounts(id),
+  amount numeric(12,2) not null check (amount > 0),
+  side text not null check (side in ('debit', 'credit')),
+  memo text,
+  created_at timestamptz default now()
+);
+
+-- Enforce double-entry balance on every posted journal entry
+create or replace function check_journal_balance()
+returns trigger as $$
+declare
+  total_debits numeric;
+  total_credits numeric;
+begin
+  if new.is_posted = true then
+    select
+      coalesce(sum(case when side = 'debit' then amount else 0 end), 0),
+      coalesce(sum(case when side = 'credit' then amount else 0 end), 0)
+    into total_debits, total_credits
+    from journal_lines
+    where journal_entry_id = new.id;
+
+    if total_debits <> total_credits then
+      raise exception 'Journal entry % does not balance: debits=% credits=%',
+        new.id, total_debits, total_credits;
+    end if;
+  end if;
+  return new;
+end;
+$$ language plpgsql;
+
+create trigger enforce_journal_balance
+  before update of is_posted on journal_entries
+  for each row execute function check_journal_balance();
+
+-- Obligations library
+create table obligations (
+  id uuid primary key default uuid_generate_v4(),
+  household_id uuid not null references households(id) on delete cascade,
+  name text not null,
+  obligation_type text not null check (obligation_type in ('recurring', 'irregular', 'contingent')),
+  frequency text check (frequency in ('daily', 'weekly', 'biweekly', 'monthly', 'quarterly', 'annual', 'one_time')),
+  estimated_amount numeric(12,2) not null,
+  probability numeric(3,2) default 1.0 check (probability between 0 and 1),
+  next_due_date date,
+  accrual_account_id uuid references accounts(id),
+  expense_account_id uuid references accounts(id),
+  is_active boolean default true,
+  created_at timestamptz default now()
+);
+
+-- Accrual schedule tracking
+create table accrual_schedule (
+  id uuid primary key default uuid_generate_v4(),
+  obligation_id uuid not null references obligations(id) on delete cascade,
+  scheduled_date date not null,
+  amount numeric(12,2) not null,
+  journal_entry_id uuid references journal_entries(id),
+  status text default 'pending' check (status in ('pending', 'posted', 'reversed')),
+  created_at timestamptz default now()
+);
+
+-- Balance sheet snapshots (taken at period close)
+create table balance_sheet_snapshots (
+  id uuid primary key default uuid_generate_v4(),
+  household_id uuid not null references households(id) on delete cascade,
+  snapshot_date date not null,
+  account_id uuid not null references accounts(id),
+  balance numeric(12,2) not null,
+  created_at timestamptz default now()
+);
+
+-- Home value (manual input)
+create table home_valuations (
+  id uuid primary key default uuid_generate_v4(),
+  household_id uuid not null references households(id) on delete cascade,
+  estimated_value numeric(12,2) not null,
+  valuation_date date not null default current_date,
+  notes text,
+  created_by uuid references auth.users(id),
+  created_at timestamptz default now()
+);
+
+-- Plaid items (bank connections)
+create table plaid_items (
+  id uuid primary key default uuid_generate_v4(),
+  household_id uuid not null references households(id) on delete cascade,
+  plaid_item_id text not null unique,
+  plaid_access_token text not null,
+  institution_name text,
+  status text default 'active' check (status in ('active', 'error', 'disconnected')),
+  last_synced_at timestamptz,
+  error_code text,
+  created_at timestamptz default now()
+);
+
+-- Document uploads
+create table document_uploads (
+  id uuid primary key default uuid_generate_v4(),
+  household_id uuid not null references households(id) on delete cascade,
+  uploaded_by uuid references auth.users(id),
+  file_name text not null,
+  file_type text not null,
+  storage_path text not null,
+  parse_status text default 'pending' check (parse_status in ('pending', 'processing', 'complete', 'failed')),
+  parsed_entries_count int default 0,
+  error_message text,
+  created_at timestamptz default now()
+);
+
+-- Notifications
+create table notifications (
+  id uuid primary key default uuid_generate_v4(),
+  household_id uuid not null references households(id) on delete cascade,
+  user_id uuid not null references auth.users(id),
+  type text not null,
+  title text not null,
+  body text not null,
+  data jsonb,
+  is_read boolean default false,
+  sent_email boolean default false,
+  sent_push boolean default false,
+  created_at timestamptz default now()
+);
+
+-- Notification preferences per user
+create table notification_preferences (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid not null references auth.users(id) on delete cascade unique,
+  low_liquid_position_threshold numeric(12,2) default 1000,
+  accrued_liability_threshold numeric(12,2) default 5000,
+  large_transaction_threshold numeric(12,2) default 500,
+  budget_review_day_of_month int default 1,
+  email_enabled boolean default true,
+  push_enabled boolean default true,
+  created_at timestamptz default now()
+);
+```
+
+### Migration 002 — Row Level Security
+
+```sql
+-- Enable RLS on all tables
+alter table households enable row level security;
+alter table household_members enable row level security;
+alter table accounts enable row level security;
+alter table journal_entries enable row level security;
+alter table journal_lines enable row level security;
+alter table obligations enable row level security;
+alter table accrual_schedule enable row level security;
+alter table balance_sheet_snapshots enable row level security;
+alter table home_valuations enable row level security;
+alter table plaid_items enable row level security;
+alter table document_uploads enable row level security;
+alter table notifications enable row level security;
+alter table notification_preferences enable row level security;
+
+-- Helper function: get current user's household IDs
+create or replace function get_my_household_ids()
+returns setof uuid as $$
+  select household_id from household_members where user_id = auth.uid()
+$$ language sql security definer stable;
+
+-- Households: members can view their own
+create policy "view own households" on households for select
+  using (id in (select get_my_household_ids()));
+
+-- Household members
+create policy "view own household members" on household_members for select
+  using (household_id in (select get_my_household_ids()));
+create policy "insert own membership" on household_members for insert
+  with check (user_id = auth.uid());
+
+-- Accounts
+create policy "view household accounts" on accounts for select
+  using (household_id in (select get_my_household_ids()));
+create policy "insert household accounts" on accounts for insert
+  with check (household_id in (select get_my_household_ids()));
+create policy "update household accounts" on accounts for update
+  using (household_id in (select get_my_household_ids()));
+
+-- Journal entries
+create policy "view household journal entries" on journal_entries for select
+  using (household_id in (select get_my_household_ids()));
+create policy "insert household journal entries" on journal_entries for insert
+  with check (household_id in (select get_my_household_ids()));
+
+-- Journal lines (via journal entry household check)
+create policy "view journal lines" on journal_lines for select
+  using (journal_entry_id in (
+    select id from journal_entries where household_id in (select get_my_household_ids())
+  ));
+create policy "insert journal lines" on journal_lines for insert
+  with check (journal_entry_id in (
+    select id from journal_entries where household_id in (select get_my_household_ids())
+  ));
+
+-- Apply same pattern to remaining tables
+create policy "view obligations" on obligations for select
+  using (household_id in (select get_my_household_ids()));
+create policy "manage obligations" on obligations for all
+  using (household_id in (select get_my_household_ids()));
+
+create policy "view accrual schedule" on accrual_schedule for select
+  using (obligation_id in (
+    select id from obligations where household_id in (select get_my_household_ids())
+  ));
+
+create policy "view snapshots" on balance_sheet_snapshots for select
+  using (household_id in (select get_my_household_ids()));
+
+create policy "view home valuations" on home_valuations for select
+  using (household_id in (select get_my_household_ids()));
+create policy "insert home valuations" on home_valuations for insert
+  with check (household_id in (select get_my_household_ids()));
+
+create policy "view plaid items" on plaid_items for select
+  using (household_id in (select get_my_household_ids()));
+
+create policy "view document uploads" on document_uploads for select
+  using (household_id in (select get_my_household_ids()));
+create policy "insert document uploads" on document_uploads for insert
+  with check (household_id in (select get_my_household_ids()));
+
+create policy "view own notifications" on notifications for select
+  using (user_id = auth.uid());
+create policy "update own notifications" on notifications for update
+  using (user_id = auth.uid());
+
+create policy "view own preferences" on notification_preferences for select
+  using (user_id = auth.uid());
+create policy "manage own preferences" on notification_preferences for all
+  using (user_id = auth.uid());
+```
+
+### Migration 003 — pg_cron Jobs
+
+```sql
+-- Daily accrual run at midnight UTC
+select cron.schedule(
+  'daily-accruals',
+  '0 0 * * *',
+  $$select net.http_post(
+    url := current_setting('app.edge_function_base_url') || '/run-daily-accruals',
+    headers := jsonb_build_object('Authorization', 'Bearer ' || current_setting('app.service_role_key')),
+    body := '{}'::jsonb
+  )$$
+);
+
+-- Daily income accrual run
+select cron.schedule(
+  'daily-income-accruals',
+  '5 0 * * *',
+  $$select net.http_post(
+    url := current_setting('app.edge_function_base_url') || '/run-income-accruals',
+    headers := jsonb_build_object('Authorization', 'Bearer ' || current_setting('app.service_role_key')),
+    body := '{}'::jsonb
+  )$$
+);
+
+-- Monthly close reminder on the 28th of each month
+select cron.schedule(
+  'monthly-close-reminder',
+  '0 9 28 * *',
+  $$select net.http_post(
+    url := current_setting('app.edge_function_base_url') || '/send-monthly-close-reminders',
+    headers := jsonb_build_object('Authorization', 'Bearer ' || current_setting('app.service_role_key')),
+    body := '{}'::jsonb
+  )$$
+);
+
+-- Budget review reminder (runs daily, checks user preferences for day_of_month)
+select cron.schedule(
+  'budget-review-reminders',
+  '0 8 * * *',
+  $$select net.http_post(
+    url := current_setting('app.edge_function_base_url') || '/send-budget-review-reminders',
+    headers := jsonb_build_object('Authorization', 'Bearer ' || current_setting('app.service_role_key')),
+    body := '{}'::jsonb
+  )$$
+);
+```
+
+---
+
+## Edge Functions (`/supabase/functions`)
+
+### `plaid-webhook`
+Receives Plaid webhook events. For `TRANSACTIONS_SYNC` events, fetch new/modified/removed transactions from Plaid and convert each to a double-entry journal entry. Map Plaid account types to the household chart of accounts. Post the journal entries. After posting, check notification thresholds (large transaction detection). Trigger a balance sheet recalculation.
+
+Key logic:
+- Credit card purchase: Debit expense account, Credit liability (credit card) account
+- Bank debit (debit card / ACH): Debit expense account, Credit cash account
+- Inbound transfer / paycheck: Debit cash account, Credit income account
+- Credit card payment: Debit liability (credit card), Credit cash — balance sheet reclassification only, no income statement impact
+
+### `calculate-position`
+Called on demand by the frontend to compute the true liquid position.
+
+```typescript
+// Pseudocode logic
+async function calculatePosition(householdId: string): Promise<TrueLiquidPosition> {
+  // 1. Sum all cash_equivalent and near_liquid asset account balances
+  const grossCash = await sumAssetsByLiquidityTier(householdId, ['cash_equivalent', 'near_liquid'])
+
+  // 2. Sum all accrued_liability account balances
+  const accruedLiabilities = await sumLiabilitiesBySubtype(householdId, 'accrued_liability')
+
+  // 3. Sum outstanding credit card balances (current_liability)
+  const outstandingCredit = await sumLiabilitiesBySubtype(householdId, 'current_liability')
+
+  // 4. Sum provisioned obligations due within next 30 days
+  const provisionedObligations = await sumUpcomingObligations(householdId, 30)
+
+  return {
+    gross_cash: grossCash,
+    accrued_liabilities: accruedLiabilities,
+    outstanding_credit_balances: outstandingCredit,
+    provisioned_obligations: provisionedObligations,
+    true_liquid_position: grossCash - accruedLiabilities - outstandingCredit - provisionedObligations,
+    as_of: new Date().toISOString()
+  }
+}
+```
+
+### `run-daily-accruals`
+Runs at midnight UTC via pg_cron. For every active obligation, calculates the day's accrual amount (estimated_amount / days_in_period * probability), creates a journal entry (Debit expense, Credit accrued_liability), and posts it. Updates next_due_date for obligations that have matured. Checks thresholds and fires notifications if accrued_liability balance exceeds user preference.
+
+### `run-income-accruals`
+Runs at 00:05 UTC via pg_cron. For each household member with a salary configured, posts a daily income accrual entry: Debit accounts_receivable (accrued income asset), Credit income. On actual paycheck receipt (detected via Plaid), reverses the accrued income and records the cash receipt.
+
+### `period-close`
+Triggered by user action in the UI. Steps:
+1. Validate all entries for the period are posted
+2. Calculate net income for the period (sum income accounts minus sum expense accounts)
+3. Post closing entry: Debit all income accounts to zero, Credit all expense accounts to zero, net difference to retained equity
+4. Take balance sheet snapshot for every account
+5. Reset accrual balances for the new period
+6. Send `income_statement_ready` and `balance_sheet_snapshot` notifications
+7. Return the period income statement summary
+
+### `parse-document`
+Triggered when a document is uploaded to Supabase Storage. Accepts PDF bank statements and CSV exports. Extract transactions using pattern matching and structured parsing. Map each transaction to a proposed journal entry with account suggestions. Return the proposed entries to the UI for user review and confirmation before posting. Update document_uploads parse_status throughout.
+
+### `send-notification`
+Shared utility called by other functions. Accepts a `NotificationPayload`. Inserts a record into the notifications table. If `email_enabled` in user preferences, sends via Resend API. If `push_enabled`, sends Web Push notification. Checks user preferences for thresholds before firing threshold-based notifications.
+
+### `plaid-link-exchange`
+Exchanges a Plaid Link public token for an access token. Stores the access token in plaid_items. Creates corresponding account records in the accounts table mapped to the correct account types and subtypes. Returns the created accounts to the frontend.
+
+---
+
+## Frontend Application (`/apps/web`)
+
+### App Structure
+```
+apps/web/
+├── app/
+│   ├── (auth)/
+│   │   ├── login/page.tsx
+│   │   └── signup/page.tsx
+│   ├── (app)/
+│   │   ├── layout.tsx               # Authenticated shell with nav
+│   │   ├── dashboard/page.tsx       # Position screen (home)
+│   │   ├── balance-sheet/page.tsx   # Full balance sheet view
+│   │   ├── obligations/page.tsx     # Obligation library and calendar
+│   │   ├── transactions/page.tsx    # Transaction ledger and manual entry
+│   │   ├── documents/page.tsx       # Document upload and review
+│   │   ├── close/page.tsx           # Period close ritual
+│   │   ├── household/page.tsx       # Household settings and members
+│   │   ├── accounts/page.tsx        # Account management and Plaid linking
+│   │   └── notifications/page.tsx   # Notification center
+│   └── api/
+│       ├── plaid/link-token/route.ts
+│       ├── plaid/exchange/route.ts
+│       └── plaid/webhook/route.ts
+├── components/
+│   ├── ui/                          # Shadcn/ui base components
+│   ├── position/
+│   │   ├── TrueLiquidPositionCard.tsx
+│   │   ├── PositionBreakdown.tsx
+│   │   └── PositionTrend.tsx
+│   ├── balance-sheet/
+│   │   ├── BalanceSheetTable.tsx
+│   │   ├── AssetSection.tsx
+│   │   ├── LiabilitySection.tsx
+│   │   └── EquitySection.tsx
+│   ├── obligations/
+│   │   ├── ObligationCalendar.tsx
+│   │   ├── ObligationCard.tsx
+│   │   └── AddObligationForm.tsx
+│   ├── transactions/
+│   │   ├── TransactionLedger.tsx
+│   │   ├── ManualEntryForm.tsx
+│   │   └── JournalEntryDetail.tsx
+│   ├── charts/
+│   │   ├── NetWorthTrend.tsx
+│   │   ├── LiabilityAging.tsx
+│   │   ├── IncomeExpenseBar.tsx
+│   │   └── EquityComposition.tsx
+│   └── notifications/
+│       ├── NotificationBell.tsx
+│       └── NotificationList.tsx
+├── lib/
+│   ├── supabase/
+│   │   ├── client.ts                # Browser Supabase client
+│   │   └── server.ts                # Server Supabase client
+│   ├── queries/                     # React Query hooks
+│   │   ├── usePosition.ts
+│   │   ├── useBalanceSheet.ts
+│   │   ├── useObligations.ts
+│   │   └── useJournalEntries.ts
+│   └── plaid/
+│       └── usePlaidLink.ts
+└── middleware.ts                    # Auth middleware, redirect to login if unauthenticated
+```
+
+### Key Screens
+
+#### Dashboard (Position Screen)
+The home screen. Renders immediately on load. Contains:
+- **True Liquid Position card** — large, prominent hero number. Color codes green/yellow/red based on coverage ratio against next 30 days of obligations. Shows the four components as a breakdown (gross cash, minus accrued liabilities, minus outstanding credit, minus provisioned obligations).
+- **Balance sheet summary** — collapsed asset/liability/equity totals with drill-down link.
+- **Upcoming obligations strip** — next 7 days of obligations from the obligation calendar.
+- **Recent transactions** — last 5 posted journal entries.
+- **Notification bell** with unread count.
+
+Use Supabase Realtime to subscribe to journal_lines inserts for the household. Invalidate the position query on any new entry so the hero number stays current.
+
+#### Balance Sheet
+Full balance sheet rendered as a financial statement. Assets grouped by liquidity tier. Liabilities grouped by subtype (current, accrued, long-term, mortgage). Equity section showing retained and current period result. All figures are live from the ledger.
+
+Include a date picker to view historical balance sheets from snapshots. Include a small sparkline next to each major line item showing the 6-month trend.
+
+#### Obligations
+Two views toggled by tab: **Library** (list of all obligations with edit/delete) and **Calendar** (forward 90-day view of all upcoming obligation due dates, color-coded by coverage).
+
+Add Obligation form collects: name, type, frequency, estimated amount, probability (for contingent), next due date, and which accounts to use for accrual and expense booking.
+
+#### Transactions
+Ledger view of all posted journal entries with filtering by date range, entry type, and source. Each row expandable to show the full double-entry lines.
+
+Manual Entry form: description, effective date, and a dynamic debit/credit line builder. Validates that total debits equal total credits before allowing submission. Posts immediately on submit.
+
+#### Documents
+Upload zone for PDF bank statements and CSV exports. After upload, the parse-document Edge Function processes the file and returns proposed journal entries. User reviews proposed entries in a table — can accept, edit, or reject each line — before confirming the batch post.
+
+#### Period Close
+Presented as a step-by-step ritual with clear progress indicators:
+1. **Review** — summary of the period: income earned, expenses incurred, net result
+2. **Reconcile** — flag any unposted items or imbalances for resolution
+3. **Confirm** — user explicitly confirms the close
+4. **Report** — income statement for the period, balance sheet snapshot confirmation, equity movement summary
+
+This screen should feel deliberate and significant — not automated away. The ritual is part of the product value.
+
+#### Household Settings
+Add/invite second household member. Configure each member's pay schedule, pay days, and gross salary. Manage Plaid connections (add, refresh, disconnect). Set home value (manual input with date). Configure notification preferences and thresholds.
+
+---
+
+## Notification System
+
+### In-App Notifications
+Insert into notifications table. Frontend subscribes via Supabase Realtime to new rows where `user_id = auth.uid()`. NotificationBell component shows unread count badge. NotificationList renders all notifications with mark-as-read.
+
+### Email Notifications
+Use **Resend** as the email provider. Create transactional email templates for each notification type. The `send-notification` Edge Function calls the Resend API when `email_enabled = true` in user preferences.
+
+### Push Notifications
+Implement Web Push using the Web Push Protocol. Store push subscriptions in a `push_subscriptions` table. The `send-notification` Edge Function sends push payloads using the `web-push` library when `push_enabled = true`.
+
+### Notification Types and Triggers
+
+| Type | Trigger | Threshold |
+|---|---|---|
+| low_liquid_position | After any position recalculation | User-defined (default $1,000) |
+| accrued_liability_threshold | After daily accrual run | User-defined (default $5,000) |
+| missed_obligation | Obligation past due_date with no journal entry | Any |
+| budget_review_reminder | pg_cron daily, checks day_of_month preference | User-defined day |
+| monthly_close_reminder | pg_cron on 28th of month | Fixed |
+| income_statement_ready | After period close completes | Automatic |
+| net_worth_milestone | After balance sheet snapshot | User-defined milestones |
+| balance_sheet_snapshot | After period close completes | Automatic |
+| large_transaction | After Plaid webhook posts a transaction | User-defined (default $500) |
+| account_connection_error | Plaid webhook receives error status | Any |
+| manual_entry_posted | After manual journal entry is confirmed | Automatic |
+
+---
+
+## Design System
+
+### Visual Principles
+- **Dense but readable** — financial data requires information density. Do not sacrifice precision for whitespace.
+- **Monospace numbers** — use a tabular/monospace font (JetBrains Mono or similar) for all financial figures so columns align.
+- **Color with meaning** — green for positive position / equity growth, amber for warning thresholds, red for negative position or overdue obligations. Never use color decoratively on financial figures.
+- **Dark mode first** — the primary design should be dark mode. Light mode as secondary.
+- **Trust through precision** — two decimal places on all financial figures. Timestamps on all calculations. Source labels on all entries.
+
+### Tailwind Config
+Extend the default Tailwind config with:
+- A financial color scale (positive-green, warning-amber, negative-red, neutral-slate)
+- JetBrains Mono as the `font-mono` family for figures
+- Custom spacing tokens for financial table rows
+
+---
+
+## Environment Variables
+
+```env
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+
+# Plaid
+PLAID_CLIENT_ID=
+PLAID_SECRET=
+PLAID_ENV=sandbox # sandbox | development | production
+
+# Resend (email)
+RESEND_API_KEY=
+RESEND_FROM_ADDRESS=notifications@householdcfo.com
+
+# Web Push
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=mailto:admin@householdcfo.com
+
+# App
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+EDGE_FUNCTION_BASE_URL= # Supabase Edge Function base URL
+```
+
+---
+
+## Development Sequence
+
+Build in this exact order to ensure each layer is testable before the next is added:
+
+1. **Monorepo scaffold** — set up the workspace, install dependencies, configure TypeScript paths, create the shared types package.
+
+2. **Database migrations** — run all three migrations against a local Supabase instance. Verify the journal balance trigger works by attempting to post an unbalanced entry.
+
+3. **Auth and household setup** — implement signup, login, household creation, and member invitation. Verify RLS is working correctly.
+
+4. **Plaid integration** — implement Link token creation, token exchange, and the plaid-webhook Edge Function. Test in Plaid sandbox. Verify transactions are converting to correct double-entry journal entries.
+
+5. **Calculate-position Edge Function** — implement and test against sandbox data. Connect to the dashboard hero card.
+
+6. **Obligation library and daily accrual scheduler** — implement the obligations UI and the run-daily-accruals Edge Function. Manually trigger the function and verify accrual journal entries post correctly.
+
+7. **Manual entry and document upload** — implement the manual entry form and the parse-document Edge Function. Test with real PDF bank statement samples.
+
+8. **Period close** — implement the close ritual UI and Edge Function. Verify balance sheet snapshots are taken and equity rolls correctly.
+
+9. **Notification system** — wire up in-app Realtime notifications first, then email via Resend, then Web Push.
+
+10. **Charts and historical views** — implement all chart components once there is real data to visualize.
+
+---
+
+## Notes for the Developer
+
+- The double-entry balance trigger is the most critical piece of infrastructure. Test it exhaustively before building anything on top of it.
+- Never mutate account balances directly. All balance changes must flow through journal entries. Account balances are derived from the ledger, not stored independently (or if cached for performance, always reconciled against the ledger).
+- The Plaid access token must never be exposed to the frontend. All Plaid API calls must go through Edge Functions or API routes server-side.
+- Row Level Security must be verified independently of application-layer auth. Test direct database queries with different user tokens to confirm isolation.
+- The period close is irreversible by design. Add a confirmation modal with explicit user acknowledgment before executing.
+- All monetary arithmetic must use integer cents internally to avoid floating point errors. Store as `numeric(12,2)` in PostgreSQL and handle rounding explicitly in application code.
