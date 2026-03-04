@@ -34,13 +34,15 @@ export async function POST(req: Request) {
     }
 
     const plaid = getPlaidClient()
+    const webhookUrl = process.env.PLAID_WEBHOOK_URL
+
     const response = await plaid.linkTokenCreate({
       user: { client_user_id: user.id },
       client_name: 'Household CFO',
       products: [Products.Transactions],
       country_codes: [CountryCode.Us],
       language: 'en',
-      webhook: `${process.env.NEXT_PUBLIC_APP_URL}/api/plaid/webhook`,
+      ...(webhookUrl ? { webhook: webhookUrl } : {}),
     })
 
     return successResponse({ link_token: response.data.link_token })
