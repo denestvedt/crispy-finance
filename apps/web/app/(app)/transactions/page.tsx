@@ -1,44 +1,31 @@
-'use client'
+import { createClient } from '@/lib/supabase/server'
+import { TransactionsClient } from '@/components/transactions/TransactionsClient'
 
-import { useMemo } from 'react'
+export default async function TransactionsPage() {
+  const supabase = await createClient()
 
-import { VirtualizedLedgerTable } from '@/components/ledger/VirtualizedLedgerTable'
-import { useLedgerEntries } from '@/lib/queries/useLedgerEntries'
-import type { LedgerEntriesResponse } from '@/lib/queries/useLedgerEntries'
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
-const HOUSEHOLD_ID = process.env.NEXT_PUBLIC_DEFAULT_HOUSEHOLD_ID ?? ''
+  const { data: membership } = await supabase
+    .from('household_members')
+    .select('household_id')
+    .eq('user_id', user?.id ?? '')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
 
-export default function TransactionsPage() {
-  const ledger = useLedgerEntries(HOUSEHOLD_ID)
-
-  const entries = useMemo(
-    () => (ledger.data?.pages as LedgerEntriesResponse[] | undefined)?.flatMap((page) => page.items) ?? [],
-    [ledger.data?.pages],
-  )
+  const householdId = membership?.household_id ?? ''
 
   return (
     <section className="space-y-4">
       <h1 className="text-xl font-semibold">Transactions</h1>
-
-      {!HOUSEHOLD_ID && <p className="rounded border border-amber-700 bg-amber-950 p-3 text-amber-200">Set NEXT_PUBLIC_DEFAULT_HOUSEHOLD_ID to load ledger data.</p>}
-      {ledger.isLoading && <p className="text-slate-400">Loading transaction ledger…</p>}
-      {ledger.isError && <p className="rounded border border-rose-700 bg-rose-950 p-3 text-rose-200">Could not load the ledger. Retry once connectivity is restored.</p>}
-      {!ledger.isLoading && !ledger.isError && entries.length === 0 && <p className="text-slate-400">No transactions recorded yet.</p>}
-
-      {entries.length > 0 && <VirtualizedLedgerTable entries={entries} />}
-
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          className="rounded border border-slate-700 px-3 py-2 text-sm text-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
-          onClick={() => ledger.fetchNextPage()}
-          disabled={!ledger.hasNextPage || ledger.isFetchingNextPage}
-        >
-          {ledger.isFetchingNextPage ? 'Loading more…' : ledger.hasNextPage ? 'Load older transactions' : 'End of ledger'}
-        </button>
-
-        {ledger.isFetching && !ledger.isFetchingNextPage && <span className="text-xs text-slate-500">Refreshing…</span>}
-      </div>
+      {householdId ? (
+        <TransactionsClient householdId={householdId} />
+      ) : (
+        <p className="text-slate-400">No household found. Complete sign-up to continue.</p>
+      )}
     </section>
   )
 }

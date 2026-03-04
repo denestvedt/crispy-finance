@@ -1,6 +1,7 @@
 import { DashboardClient } from '@/components/dashboard/DashboardClient'
 import { ModuleCard } from '@/components/dashboard/ModuleState'
 import { createClient } from '@/lib/supabase/server'
+import { ensureHouseholdMembership } from '@/lib/supabase/ensure-household'
 
 type HouseholdRef = { name: string } | { name: string }[] | null
 
@@ -10,6 +11,12 @@ export default async function DashboardPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser()
+
+  if (user) {
+    await ensureHouseholdMembership(supabase, user).catch(() => {
+      // Non-fatal: membership may already exist or be created by a race
+    })
+  }
 
   const { data: membership } = await supabase
     .from('household_members')
