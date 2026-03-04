@@ -145,6 +145,27 @@ serve(async (req) => {
       const householdId = record.household_id as string
       const plaidItemId = (record.payload as Record<string, unknown>)?.plaid_item_id as string | undefined
 
+      if (txIds.length === 0) {
+        recordLogger.info('worker_record_skipped_empty_transaction_ids')
+
+        const processedAt = new Date().toISOString()
+        const latencyMs = new Date(processedAt).getTime() - new Date(record.created_at as string).getTime()
+
+        await supabaseAdmin.from('ingestion_latency_metrics').insert({
+          pipeline: 'plaid_webhook',
+          ingest_record_id: record.id,
+          latency_ms: Math.max(latencyMs, 0),
+        })
+
+        await supabaseAdmin
+          .from('plaid_webhook_ingest')
+          .update({ status: 'processed', processed_at: processedAt, last_error: null, next_retry_at: null })
+          .eq('id', record.id)
+
+        processed.push({ id: record.id, webhookEventId: record.webhook_event_id, status: 'processed', createdEntries: 0, skipped: true })
+        continue
+      }
+
       // Look up access token
       const itemQ = supabaseAdmin
         .from('plaid_items')
@@ -163,7 +184,7 @@ serve(async (req) => {
         access_token: accessToken,
         start_date: '2000-01-01',
         end_date: today,
-        options: { count: Math.max(txIds.length, 100), offset: 0 },
+        options: { count: txIds.length, offset: 0 },
       })
 
       const txMap = new Map<string, Record<string, unknown>>()
@@ -178,7 +199,7 @@ serve(async (req) => {
       ])
 
       let createdEntries = 0
-      const targetIds = txIds.length > 0 ? txIds : [...txMap.keys()]
+      const targetIds = txIds
 
       for (const txId of targetIds) {
         const dedup = await reserveIdempotencyKey({
