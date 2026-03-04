@@ -38,6 +38,7 @@ The dashboard currently runs in a temporary **Demo Mode** with placeholder/query
 ## Operations
 
 - `docs/operational-readiness.md`: SLOs, alerting, runbooks, and rollout/rollback checklists.
+- `docs/mvp-execution-plan.md`: ticketized MVP backlog and agent prompt template for implementation sequencing.
 
 ## Local Testing in 5 Minutes
 
