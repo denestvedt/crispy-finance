@@ -1,4 +1,4 @@
-import { AccountType as PlaidAccountType, AccountSubtype as PlaidAccountSubtype } from 'plaid'
+import { AccountType as PlaidAccountType, AccountSubtype as PlaidAccountSubtype, CountryCode } from 'plaid'
 import { z } from 'zod'
 
 import { createClient } from '@/lib/supabase/server'
@@ -73,7 +73,7 @@ export async function POST(req: Request) {
     const institutionId = itemRes.data.item.institution_id
     let institutionName: string | null = null
     if (institutionId) {
-      const instRes = await plaid.institutionsGetById({ institution_id: institutionId, country_codes: ['US'] })
+      const instRes = await plaid.institutionsGetById({ institution_id: institutionId, country_codes: [CountryCode.Us] })
       institutionName = instRes.data.institution.name
     }
 
