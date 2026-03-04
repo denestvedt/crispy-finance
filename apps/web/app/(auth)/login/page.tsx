@@ -2,13 +2,12 @@
 
 import { FormEvent, Suspense, useState } from 'react'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 
 import { createClient } from '@/lib/supabase/client'
 import { hasSupabaseEnv } from '@/lib/supabase/env'
 
 function LoginForm() {
-  const router = useRouter()
   const searchParams = useSearchParams()
 
   const [email, setEmail] = useState('')
@@ -37,9 +36,7 @@ function LoginForm() {
       return
     }
 
-    const next = searchParams.get('next') ?? '/dashboard'
-    router.push(next)
-    router.refresh()
+    window.location.assign(searchParams.get('next') ?? '/dashboard')
   }
 
   return (
