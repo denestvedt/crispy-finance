@@ -1,6 +1,9 @@
+import { CountryCode, Products } from 'plaid'
 import { z } from 'zod'
 
-import { errorResponse, parseJson } from '@/app/api/_lib/contracts'
+import { createClient } from '@/lib/supabase/server'
+import { getPlaidClient } from '@/lib/plaid/client'
+import { errorResponse, parseJson, successResponse } from '@/app/api/_lib/contracts'
 
 const schema = z.object({
   household_id: z.string().uuid(),
@@ -8,17 +11,43 @@ const schema = z.object({
 
 export async function POST(req: Request) {
   try {
-    await parseJson(req, schema)
+    const { household_id } = await parseJson(req, schema)
 
-    return errorResponse(501, {
-      code: 'NOT_IMPLEMENTED',
-      message: 'Plaid link-token generation is not implemented yet',
-      retryable: false,
+    const supabase = await createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      return errorResponse(401, { code: 'UNAUTHENTICATED', message: 'Authentication required', retryable: false })
+    }
+
+    const { data: membership } = await supabase
+      .from('household_members')
+      .select('id')
+      .eq('household_id', household_id)
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (!membership) {
+      return errorResponse(403, { code: 'FORBIDDEN', message: 'Not a member of this household', retryable: false })
+    }
+
+    const plaid = getPlaidClient()
+    const response = await plaid.linkTokenCreate({
+      user: { client_user_id: user.id },
+      client_name: 'Household CFO',
+      products: [Products.Transactions],
+      country_codes: [CountryCode.Us],
+      language: 'en',
+      webhook: `${process.env.NEXT_PUBLIC_APP_URL}/api/plaid/webhook`,
     })
+
+    return successResponse({ link_token: response.data.link_token })
   } catch (error) {
-    return errorResponse(400, {
-      code: 'INVALID_REQUEST',
-      message: error instanceof Error ? error.message : 'Invalid request payload',
+    return errorResponse(500, {
+      code: 'LINK_TOKEN_FAILED',
+      message: error instanceof Error ? error.message : 'Failed to create Plaid link token',
       retryable: false,
     })
   }

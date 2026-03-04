@@ -1,59 +1,139 @@
+import { AccountType as PlaidAccountType, AccountSubtype as PlaidAccountSubtype } from 'plaid'
 import { z } from 'zod'
-import type { PlaidExchangeRequest, PlaidExchangeResponse } from '@household-cfo/types'
 
 import { createClient } from '@/lib/supabase/server'
+import { getPlaidClient } from '@/lib/plaid/client'
 import { errorResponse, parseJson, successResponse } from '@/app/api/_lib/contracts'
+import type { AccountSubtype, AccountType, LiquidityTier } from '@household-cfo/types'
 
 const schema = z.object({
   household_id: z.string().uuid(),
   public_token: z.string().min(1),
-  plaid_transaction_ids: z.array(z.string().min(1)).default([]),
-  idempotency_key: z.string().min(8),
 })
+
+/** Map a Plaid account type/subtype to our chart-of-accounts fields. */
+function mapPlaidAccount(
+  type: string,
+  subtype: string | null,
+): { account_type: AccountType; account_subtype: AccountSubtype; liquidity_tier: LiquidityTier | null } {
+  if (type === PlaidAccountType.Depository) {
+    return { account_type: 'asset', account_subtype: 'cash_equivalent', liquidity_tier: 'cash_equivalent' }
+  }
+  if (type === PlaidAccountType.Credit) {
+    return { account_type: 'liability', account_subtype: 'current_liability', liquidity_tier: null }
+  }
+  if (type === PlaidAccountType.Loan) {
+    const isMortgage = subtype === PlaidAccountSubtype.Mortgage
+    return {
+      account_type: 'liability',
+      account_subtype: isMortgage ? 'mortgage' : 'long_term_liability',
+      liquidity_tier: null,
+    }
+  }
+  if (type === PlaidAccountType.Investment) {
+    return { account_type: 'asset', account_subtype: 'near_liquid', liquidity_tier: 'near_liquid' }
+  }
+  return { account_type: 'asset', account_subtype: 'near_liquid', liquidity_tier: 'near_liquid' }
+}
 
 export async function POST(req: Request) {
   try {
-    const payload = await parseJson(req, schema)
+    const { household_id, public_token } = await parseJson(req, schema)
+
     const supabase = await createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
 
-    const accepted: string[] = []
-    const duplicates: string[] = []
-
-    for (const transactionId of payload.plaid_transaction_ids) {
-      const { data, error } = await supabase.rpc('post_journal_entry', {
-        p_household_id: payload.household_id,
-        p_entry_date: null,
-        p_effective_date: null,
-        p_description: `Plaid import ${transactionId}`,
-        p_entry_type: 'transaction',
-        p_source: 'plaid',
-        p_lines: [
-          { account_id: '11111111-1111-1111-1111-111111111111', amount_cents: 1, side: 'debit' },
-          { account_id: '22222222-2222-2222-2222-222222222222', amount_cents: 1, side: 'credit' },
-        ],
-        p_idempotency_key: `${payload.idempotency_key}:${transactionId}`,
-      })
-
-      if (error) {
-        return errorResponse(400, {
-          code: 'PLAID_EXCHANGE_FAILED',
-          message: error.message,
-          retryable: false,
-        })
-      }
-
-      if (data?.[0]?.replayed) duplicates.push(transactionId)
-      else accepted.push(transactionId)
+    if (!user) {
+      return errorResponse(401, { code: 'UNAUTHENTICATED', message: 'Authentication required', retryable: false })
     }
 
-    return successResponse<PlaidExchangeResponse>({
-      accepted_transaction_ids: accepted,
-      duplicate_transaction_ids: duplicates,
+    const { data: membership } = await supabase
+      .from('household_members')
+      .select('id')
+      .eq('household_id', household_id)
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (!membership) {
+      return errorResponse(403, { code: 'FORBIDDEN', message: 'Not a member of this household', retryable: false })
+    }
+
+    const plaid = getPlaidClient()
+
+    const exchangeRes = await plaid.itemPublicTokenExchange({ public_token })
+    const { access_token, item_id } = exchangeRes.data
+
+    const [itemRes, accountsRes] = await Promise.all([
+      plaid.itemGet({ access_token }),
+      plaid.accountsGet({ access_token }),
+    ])
+
+    const institutionId = itemRes.data.item.institution_id
+    let institutionName: string | null = null
+    if (institutionId) {
+      const instRes = await plaid.institutionsGetById({ institution_id: institutionId, country_codes: ['US'] })
+      institutionName = instRes.data.institution.name
+    }
+
+    const { error: itemUpsertError } = await supabase.from('plaid_items').upsert(
+      {
+        household_id,
+        plaid_item_id: item_id,
+        plaid_access_token: access_token,
+        institution_name: institutionName,
+        status: 'active',
+        last_synced_at: new Date().toISOString(),
+      },
+      { onConflict: 'plaid_item_id' },
+    )
+
+    if (itemUpsertError) {
+      return errorResponse(500, { code: 'ITEM_UPSERT_FAILED', message: itemUpsertError.message, retryable: true })
+    }
+
+    const createdAccountIds: string[] = []
+    for (const plaidAccount of accountsRes.data.accounts) {
+      const mapping = mapPlaidAccount(plaidAccount.type, plaidAccount.subtype ?? null)
+      const balance = plaidAccount.balances.current ?? 0
+
+      const { data: insertedAccount, error: accountError } = await supabase
+        .from('accounts')
+        .insert({
+          household_id,
+          ...mapping,
+          name: plaidAccount.name,
+          external_account_id: plaidAccount.account_id,
+          plaid_item_id: item_id,
+          is_system: false,
+          current_balance: balance,
+        })
+        .select('id')
+        .single()
+
+      if (accountError) {
+        // Account likely already exists — refresh its balance
+        await supabase
+          .from('accounts')
+          .update({ current_balance: balance })
+          .eq('external_account_id', plaidAccount.account_id)
+          .eq('household_id', household_id)
+      } else if (insertedAccount) {
+        createdAccountIds.push(insertedAccount.id)
+      }
+    }
+
+    return successResponse({
+      plaid_item_id: item_id,
+      institution_name: institutionName,
+      created_account_count: createdAccountIds.length,
+      created_account_ids: createdAccountIds,
     })
   } catch (error) {
-    return errorResponse(400, {
-      code: 'INVALID_REQUEST',
-      message: error instanceof Error ? error.message : 'Invalid request payload',
+    return errorResponse(500, {
+      code: 'EXCHANGE_FAILED',
+      message: error instanceof Error ? error.message : 'Token exchange failed',
       retryable: false,
     })
   }
