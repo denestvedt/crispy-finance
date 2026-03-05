@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient, hasServiceRoleEnv } from '@/lib/supabase/admin'
+import { ensureHouseholdMembershipAsAdmin } from '@/lib/supabase/ensure-household-admin'
 import { ensureHouseholdMembership } from '@/lib/supabase/ensure-household'
 
 export async function POST(request: Request) {
@@ -25,6 +27,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, householdId: result.householdId, created: result.created })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to initialize household'
+    const isRlsInsertBlock = message.toLowerCase().includes('row-level security policy')
+
+    if (isRlsInsertBlock && hasServiceRoleEnv()) {
+      try {
+        const admin = createAdminClient()
+        const result = await ensureHouseholdMembershipAsAdmin(admin, user)
+        return NextResponse.json({ ok: true, householdId: result.householdId, created: result.created })
+      } catch (adminError) {
+        const adminMessage = adminError instanceof Error ? adminError.message : 'Unable to initialize household'
+        return NextResponse.json({ error: adminMessage }, { status: 500 })
+      }
+    }
+
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }
