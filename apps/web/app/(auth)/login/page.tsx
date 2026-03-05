@@ -2,6 +2,7 @@
 
 import { FormEvent, Suspense, useState } from 'react'
 import Link from 'next/link'
+import type { Route } from 'next'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 import { createClient } from '@/lib/supabase/client'
@@ -15,6 +16,15 @@ function LoginForm() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  function resolveNextRoute(): Route {
+    const next = searchParams.get('next')
+    if (!next || !next.startsWith('/') || next.startsWith('//')) {
+      return '/dashboard'
+    }
+
+    return next as Route
+  }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -37,8 +47,7 @@ function LoginForm() {
       return
     }
 
-    const next = searchParams.get('next') ?? '/dashboard'
-    router.push(next)
+    router.push(resolveNextRoute())
     router.refresh()
   }
 
