@@ -44,11 +44,16 @@ Add these in Vercel under **Project Settings** → **Environment Variables**:
 - `NEXT_PUBLIC_SUPABASE_URL` = your hosted Supabase project URL (for example, `https://<project-ref>.supabase.co`)
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` = your Supabase anon/public key
 - `NEXT_PUBLIC_DEFAULT_HOUSEHOLD_ID` = UUID used for default dashboard/account pages in this app
+- `SUPABASE_SERVICE_ROLE_KEY` = your Supabase service role key (**server-only**, never `NEXT_PUBLIC_*`)
 
 Recommended:
 
 - Add each variable to **Production**, **Preview**, and **Development** scopes as needed.
 - After any env var update, trigger a redeploy from **Deployments**.
+
+### Required for household bootstrap fallback
+
+If `/dashboard` shows household setup errors mentioning RLS, ensure `SUPABASE_SERVICE_ROLE_KEY` is set in the same Vercel environment as the failing deployment (for example, **Preview** if the URL is a preview deployment), then redeploy.
 
 ## 3) Supabase hosted setup
 
