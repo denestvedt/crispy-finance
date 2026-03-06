@@ -1,4 +1,5 @@
 import { DashboardClient } from '@/components/dashboard/DashboardClient'
+import { HouseholdSetupCard } from '@/components/dashboard/HouseholdSetupCard'
 import { ModuleCard } from '@/components/dashboard/ModuleState'
 import { createClient } from '@/lib/supabase/server'
 import { ensureHouseholdMembership } from '@/lib/supabase/ensure-household'
@@ -58,7 +59,7 @@ export default async function DashboardPage() {
         )}
       </ModuleCard>
 
-      {householdId ? <DashboardClient householdId={householdId} /> : null}
+      {householdId ? <DashboardClient householdId={householdId} /> : <HouseholdSetupCard />}
     </section>
   )
 }
