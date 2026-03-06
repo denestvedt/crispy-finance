@@ -5,6 +5,10 @@ type EnsureHouseholdMembershipResult = {
   created: boolean
 }
 
+type EnsureHouseholdMembershipAsAdminOptions = {
+  displayName?: string
+}
+
 async function findExistingMembership(admin: SupabaseClient, userId: string) {
   const { data: existingMembership, error } = await admin
     .from('household_members')
@@ -24,13 +28,14 @@ async function findExistingMembership(admin: SupabaseClient, userId: string) {
 export async function ensureHouseholdMembershipAsAdmin(
   admin: SupabaseClient,
   user: User,
+  options: EnsureHouseholdMembershipAsAdminOptions = {},
 ): Promise<EnsureHouseholdMembershipResult> {
   const existingMembership = await findExistingMembership(admin, user.id)
   if (existingMembership) {
     return { householdId: existingMembership.household_id, created: false }
   }
 
-  const displayName = user.user_metadata.full_name || user.email || 'Owner'
+  const displayName = options.displayName?.trim() || user.user_metadata.full_name || user.email || 'Owner'
   const firstName = displayName.split(' ')[0] || 'My'
 
   const { data: household, error: householdError } = await admin
